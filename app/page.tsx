@@ -1,103 +1,319 @@
-import Image from "next/image";
+"use client";
+import React, { useState } from "react";
+import PropertyAnalysis from "./components/PropertyAnalysis";
+import {
+  PropertyData,
+  AnalysisParameters,
+  InvestmentAnalysis,
+} from "./types/property";
+import {
+  calculateInvestmentAnalysis,
+  estimateRentFromPrice,
+} from "./utils/calculations";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [analysis, setAnalysis] = useState<InvestmentAnalysis | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Analysis parameters with defaults
+  const [parameters, setParameters] = useState<AnalysisParameters>({
+    downPaymentPercent: 20,
+    interestRate: 7,
+    loanTermYears: 30,
+    monthlyRent: 0, // Will be calculated from price
+    propertyTaxPercent: 1.2,
+    insurancePercent: 0.5,
+    hoaFees: 0,
+    maintenancePercent: 1,
+    vacancyRatePercent: 8,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+
+    setLoading(true);
+    setError("");
+    setAnalysis(null);
+
+    try {
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        setError(result.error || "Failed to scrape property data");
+        return;
+      }
+
+      const propertyData: PropertyData = result.data;
+
+      // Auto-calculate rent if not set
+      const monthlyRent =
+        parameters.monthlyRent || estimateRentFromPrice(propertyData.price);
+
+      const updatedParameters = { ...parameters, monthlyRent };
+      setParameters(updatedParameters);
+
+      const investmentAnalysis = calculateInvestmentAnalysis(
+        propertyData,
+        updatedParameters
+      );
+      setAnalysis(investmentAnalysis);
+    } catch (err) {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateParameter = (key: keyof AnalysisParameters, value: number) => {
+    const newParameters = { ...parameters, [key]: value };
+    setParameters(newParameters);
+
+    // Recalculate analysis if we have property data
+    if (analysis) {
+      const newAnalysis = calculateInvestmentAnalysis(
+        analysis.propertyData,
+        newParameters
+      );
+      setAnalysis(newAnalysis);
+    }
+  };
+
+  const SliderInput = ({
+    label,
+    value,
+    min,
+    max,
+    step,
+    suffix,
+    onChange,
+  }: {
+    label: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    suffix: string;
+    onChange: (value: number) => void;
+  }) => (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700">
+        {label}: {value}
+        {suffix}
+      </label>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+      />
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            Real Estate Investment Analyzer
+          </h1>
+          <p className="text-lg text-gray-600">
+            Analyze properties from Zillow, Redfin, and Homes.com
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Input Form */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                Property URL
+              </h2>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <input
+                    type="url"
+                    placeholder="Paste Zillow, Redfin, or Homes.com URL here"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={loading}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !url.trim()}
+                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Analyzing..." : "Analyze Property"}
+                </button>
+              </form>
+
+              {error && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-red-600 text-sm">{error}</p>
+                  {error.includes("Zillow") && (
+                    <div className="mt-2 text-xs text-red-500">
+                      <p>
+                        <strong>Tip:</strong> Zillow has strong anti-scraping
+                        measures. Try:
+                      </p>
+                      <ul className="list-disc list-inside mt-1 space-y-1">
+                        <li>Using Redfin or Homes.com URLs instead</li>
+                        <li>Waiting a few minutes and trying again</li>
+                        <li>Using a different Zillow property URL</li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Analysis Parameters */}
+            <div className="bg-white rounded-lg shadow-md p-6 mt-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                Analysis Parameters
+              </h2>
+
+              <div className="space-y-6">
+                <SliderInput
+                  label="Down Payment"
+                  value={parameters.downPaymentPercent}
+                  min={5}
+                  max={50}
+                  step={1}
+                  suffix="%"
+                  onChange={(value) =>
+                    updateParameter("downPaymentPercent", value)
+                  }
+                />
+
+                <SliderInput
+                  label="Interest Rate"
+                  value={parameters.interestRate}
+                  min={3}
+                  max={12}
+                  step={0.1}
+                  suffix="%"
+                  onChange={(value) => updateParameter("interestRate", value)}
+                />
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Loan Term: {parameters.loanTermYears} years
+                  </label>
+                  <input
+                    type="range"
+                    min={15}
+                    max={30}
+                    step={5}
+                    value={parameters.loanTermYears}
+                    onChange={(e) =>
+                      updateParameter("loanTermYears", parseInt(e.target.value))
+                    }
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                <SliderInput
+                  label="Monthly Rent"
+                  value={parameters.monthlyRent}
+                  min={500}
+                  max={10000}
+                  step={50}
+                  suffix=""
+                  onChange={(value) => updateParameter("monthlyRent", value)}
+                />
+
+                <SliderInput
+                  label="Property Tax"
+                  value={parameters.propertyTaxPercent}
+                  min={0.5}
+                  max={3}
+                  step={0.1}
+                  suffix="%"
+                  onChange={(value) =>
+                    updateParameter("propertyTaxPercent", value)
+                  }
+                />
+
+                <SliderInput
+                  label="Insurance"
+                  value={parameters.insurancePercent}
+                  min={0.2}
+                  max={2}
+                  step={0.1}
+                  suffix="%"
+                  onChange={(value) =>
+                    updateParameter("insurancePercent", value)
+                  }
+                />
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    HOA Fees: ${parameters.hoaFees}
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1000}
+                    step={25}
+                    value={parameters.hoaFees}
+                    onChange={(e) =>
+                      updateParameter("hoaFees", parseInt(e.target.value))
+                    }
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                <SliderInput
+                  label="Maintenance"
+                  value={parameters.maintenancePercent}
+                  min={0.5}
+                  max={3}
+                  step={0.1}
+                  suffix="%"
+                  onChange={(value) =>
+                    updateParameter("maintenancePercent", value)
+                  }
+                />
+
+                <SliderInput
+                  label="Vacancy Rate"
+                  value={parameters.vacancyRatePercent}
+                  min={5}
+                  max={15}
+                  step={1}
+                  suffix="%"
+                  onChange={(value) =>
+                    updateParameter("vacancyRatePercent", value)
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Results */}
+          <div className="lg:col-span-2">
+            {analysis && <PropertyAnalysis analysis={analysis} />}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
