@@ -39,17 +39,22 @@ export function calculateInvestmentAnalysis(
   const monthlyPropertyTax = (price * propertyTaxPercent / 100) / 12;
   const monthlyInsurance = (price * insurancePercent / 100) / 12;
   const monthlyMaintenance = (price * maintenancePercent / 100) / 12;
+  // Adjust rent for vacancy
+  const effectiveMonthlyRent = monthlyRent * (1 - vacancyRatePercent / 100);
+  const monthlyOperatingExpenses = monthlyPropertyTax + monthlyInsurance + hoaFees + monthlyMaintenance;
   
   const monthlyExpenses = monthlyMortgagePayment + monthlyPropertyTax + 
     monthlyInsurance + hoaFees + monthlyMaintenance;
 
   // Calculate cash flow
-  const monthlyCashFlow = monthlyRent - monthlyExpenses;
+  const monthlyCashFlow = effectiveMonthlyRent - monthlyExpenses;
   const annualCashFlow = monthlyCashFlow * 12;
 
   // Calculate cap rate (NOI / Purchase Price)
-  const annualNOI = (monthlyRent * 12) - (monthlyExpenses - monthlyMortgagePayment) * 12;
+  const annualNOI = (effectiveMonthlyRent * 12) - (monthlyOperatingExpenses * 12);
   const capRate = (annualNOI / price) * 100;
+  const annualDebtService = monthlyMortgagePayment * 12;
+  const dscr = annualDebtService > 0 ? (annualNOI / annualDebtService) : 0;
 
   // Calculate cash-on-cash return (Annual Cash Flow / Total Cash Invested)
   const cashOnCashReturn = (annualCashFlow / totalCashNeeded) * 100;
@@ -66,6 +71,10 @@ export function calculateInvestmentAnalysis(
     totalCashNeeded,
     downPayment,
     closingCosts,
+    effectiveMonthlyRent,
+    monthlyOperatingExpenses,
+    annualNOI,
+    dscr,
   };
 }
 

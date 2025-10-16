@@ -13,6 +13,12 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
     capRate,
     cashOnCashReturn,
     totalCashNeeded,
+    monthlyMortgagePayment,
+    monthlyExpenses,
+    effectiveMonthlyRent,
+    monthlyOperatingExpenses,
+    annualNOI,
+    dscr,
   } = analysis;
 
   const formatCurrency = (amount: number) => {
@@ -171,7 +177,7 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
           </div>
         </div>
 
-        {/* Investment Summary */}
+        {/* Investment Summary and Formulas */}
         <div className="mt-6 p-4 bg-gray-50 rounded-lg">
           <h3 className="font-semibold text-gray-800 mb-2">
             Investment Summary
@@ -179,17 +185,50 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
           <div className="text-sm text-gray-600 space-y-1">
             <p>
               • Monthly mortgage payment:{" "}
-              {formatCurrency(analysis.monthlyMortgagePayment)}
+              {formatCurrency(monthlyMortgagePayment)}
             </p>
-            <p>
-              • Total monthly expenses:{" "}
-              {formatCurrency(analysis.monthlyExpenses)}
-            </p>
+            <p>• Total monthly expenses: {formatCurrency(monthlyExpenses)}</p>
             <p>
               • Down payment ({analysis.parameters.downPaymentPercent}%):{" "}
               {formatCurrency(analysis.downPayment)}
             </p>
             <p>• Closing costs: {formatCurrency(analysis.closingCosts)}</p>
+          </div>
+          <h4 className="font-semibold text-gray-800 mt-4 mb-2">
+            Breakdown & Formulas
+          </h4>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p>
+              • Effective Rent = Monthly Rent × (1 − Vacancy%) ={" "}
+              {formatCurrency(analysis.parameters.monthlyRent)} × (1 −{" "}
+              {analysis.parameters.vacancyRatePercent}%) ={" "}
+              {formatCurrency(effectiveMonthlyRent)}
+            </p>
+            <p>
+              • Operating Expenses = Tax + Insurance + HOA + Maintenance ={" "}
+              {formatCurrency(monthlyOperatingExpenses)}
+            </p>
+            <p>
+              • NOI = Effective Rent × 12 − Operating Expenses × 12 ={" "}
+              {formatCurrency(effectiveMonthlyRent)} × 12 −{" "}
+              {formatCurrency(monthlyOperatingExpenses)} × 12 ={" "}
+              {formatCurrency(annualNOI)}
+            </p>
+            <p>
+              • Cap Rate = NOI ÷ Price = {formatCurrency(annualNOI)} ÷{" "}
+              {formatCurrency(propertyData.price)} = {formatPercentage(capRate)}
+            </p>
+            <p>
+              • DSCR = NOI ÷ Annual Debt Service = {formatCurrency(annualNOI)} ÷{" "}
+              {formatCurrency(monthlyMortgagePayment * 12)} = {dscr.toFixed(2)}
+            </p>
+            <p>
+              • Cash Flow = Effective Rent − (Operating Expenses + Mortgage) ={" "}
+              {formatCurrency(effectiveMonthlyRent)} − (
+              {formatCurrency(monthlyOperatingExpenses)} +{" "}
+              {formatCurrency(monthlyMortgagePayment)}) ={" "}
+              {formatCurrency(monthlyCashFlow)}
+            </p>
           </div>
         </div>
       </div>

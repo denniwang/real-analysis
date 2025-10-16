@@ -45,6 +45,11 @@ export interface InvestmentAnalysis {
   totalCashNeeded: number;
   downPayment: number;
   closingCosts: number;
+  // New detailed metrics
+  effectiveMonthlyRent: number; // rent adjusted for vacancy
+  monthlyOperatingExpenses: number; // excluding mortgage
+  annualNOI: number; // NOI based on effective rent and operating expenses
+  dscr: number; // Debt Service Coverage Ratio = NOI / Annual Debt Service
 }
 
 export interface ScrapeResponse {

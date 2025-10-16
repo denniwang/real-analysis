@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
     // Detect platform and scrape accordingly
     let propertyData: PropertyData;
-    let lastError: string = '';
+  let lastError = '';
     
     if (url.includes('zillow.com')) {
       try {
@@ -518,10 +518,10 @@ async function scrapeRedfin(url: string): Promise<PropertyData> {
   }
   
   // Extract beds/baths/sqft
-  let bedsText = $('.home-main-stats').text() ||
+  const bedsText = $('.home-main-stats').text() ||
                   $('.bed-bath-beyond').text() ||
                   $('[class*="bed"]').text();
-  let parsed = parsePropertyDetails(bedsText);
+  const parsed = parsePropertyDetails(bedsText);
   let beds = fromJsonLd.beds ?? parsed.beds;
   let baths = fromJsonLd.baths ?? parsed.baths;
   let sqft = fromJsonLd.sqft ?? parsed.sqft;
@@ -552,7 +552,7 @@ async function scrapeRedfin(url: string): Promise<PropertyData> {
     const text = $(el).text();
     const priceMatch = text.match(/\$[\d,]+/);
     if (priceMatch) {
-      const comp: any = { price: parseInt(priceMatch[0].replace(/[^0-9]/g, '')) };
+      const comp: { address?: string; price: number; beds?: number; baths?: number; sqft?: number; url?: string; } = { price: parseInt(priceMatch[0].replace(/[^0-9]/g, '')) };
       const bedsMatch = text.match(/(\d+)\s*beds?/i);
       const bathsMatch = text.match(/(\d+(?:\.\d+)?)\s*baths?/i);
       const sqftMatch = text.match(/([\d,]+)\s*sq\s*ft/i);

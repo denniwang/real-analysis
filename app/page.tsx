@@ -113,12 +113,23 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<InvestmentAnalysis | null>(null);
 
   // Analysis parameters with defaults
-  const [parameters, setParameters] = useState<AnalysisParameters>(() =>
-    SLIDER_CONFIGS.reduce((acc, cfg) => {
-      (acc as any)[cfg.key] = cfg.defaultValue;
-      return acc;
-    }, {} as AnalysisParameters)
-  );
+  const [parameters, setParameters] = useState<AnalysisParameters>(() => {
+    const initial: AnalysisParameters = {
+      downPaymentPercent: 0,
+      interestRate: 0,
+      loanTermYears: 0,
+      monthlyRent: 0,
+      propertyTaxPercent: 0,
+      insurancePercent: 0,
+      hoaFees: 0,
+      maintenancePercent: 0,
+      vacancyRatePercent: 0,
+    };
+    for (const cfg of SLIDER_CONFIGS) {
+      initial[cfg.key] = cfg.defaultValue;
+    }
+    return initial;
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,16 +155,16 @@ export default function Home() {
         return;
       }
 
-      let propertyData: PropertyData = result.data;
+      let propertyData: PropertyData = result.data as PropertyData;
       // Prefer Redfin Estimate for off-market listings in analysis, but still display sold info
       if (
-        (propertyData as any).status === "off-market" &&
-        (propertyData as any).redfinEstimate &&
-        (propertyData as any).redfinEstimate > 0
+        propertyData.status === "off-market" &&
+        propertyData.redfinEstimate &&
+        propertyData.redfinEstimate > 0
       ) {
         propertyData = {
           ...propertyData,
-          price: (propertyData as any).redfinEstimate,
+          price: propertyData.redfinEstimate,
         } as PropertyData;
       }
 
