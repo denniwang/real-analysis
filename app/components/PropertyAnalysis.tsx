@@ -43,10 +43,40 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">Price</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {formatCurrency(propertyData.price)}
+            <p className="text-sm text-gray-600">
+              {propertyData.status === "off-market"
+                ? "Estimate / Price"
+                : "List Price"}
             </p>
+            <div className="flex flex-col">
+              <p className="text-2xl font-bold text-blue-600">
+                {formatCurrency(propertyData.price)}
+              </p>
+              {(propertyData.redfinEstimate ||
+                propertyData.redfinEstimateChangeText) && (
+                <div className="text-sm text-gray-600">
+                  {propertyData.redfinEstimate && (
+                    <p>
+                      Redfin Estimate:{" "}
+                      {formatCurrency(propertyData.redfinEstimate)}
+                    </p>
+                  )}
+                  {propertyData.redfinEstimateChangeText && (
+                    <p className="text-xs text-gray-500">
+                      {propertyData.redfinEstimateChangeText}
+                    </p>
+                  )}
+                </div>
+              )}
+              {propertyData.lastSoldPrice && (
+                <p className="text-xs text-gray-500">
+                  Sold for {formatCurrency(propertyData.lastSoldPrice)}
+                  {propertyData.lastSoldDate
+                    ? ` on ${propertyData.lastSoldDate}`
+                    : ""}
+                </p>
+              )}
+            </div>
           </div>
           <div>
             <p className="text-sm text-gray-600">Property Type</p>

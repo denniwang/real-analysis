@@ -6,6 +6,19 @@ export interface PropertyData {
   sqft: number;
   propertyType: string;
   url: string;
+  status?: 'active' | 'off-market' | 'sold';
+  redfinEstimate?: number;
+  redfinEstimateChangeText?: string;
+  lastSoldPrice?: number;
+  lastSoldDate?: string;
+  comps?: Array<{
+    address?: string;
+    price: number;
+    beds?: number;
+    baths?: number;
+    sqft?: number;
+    url?: string;
+  }>;
 }
 
 export interface AnalysisParameters {
