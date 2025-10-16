@@ -4,6 +4,126 @@ import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
 import { PropertyData, ScrapeResponse } from '../../types/property';
 
+// ---- Robust HTTP utils: rotating headers, retries, block detection, JSON-LD parsing ----
+const HEADER_VARIANTS: Array<Record<string, string>> = [
+  {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'max-age=0',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Referer': 'https://www.google.com/',
+  },
+  {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Referer': 'https://www.bing.com/',
+  },
+];
+
+function randomDelay(minMs: number, maxMs: number) {
+  const delta = maxMs - minMs;
+  return new Promise(resolve => setTimeout(resolve, minMs + Math.random() * delta));
+}
+
+function isBlocked(html: string, status?: number): boolean {
+  if (!html) return true;
+  const lower = html.toLowerCase();
+  if (status && (status === 403 || status === 429)) return true;
+  return (
+    lower.includes('captcha') ||
+    lower.includes('robot check') ||
+    lower.includes('verify you are a human') ||
+    lower.includes('access denied') ||
+    lower.includes('temporarily unavailable') ||
+    lower.includes('request blocked') ||
+    lower.includes('cf-chl') // cloudflare challenge
+  );
+}
+
+async function fetchWithRetries(url: string, baseHeaders?: Record<string, string>, attempts = 3): Promise<{ data: string; status: number }> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    const headers = { ...(HEADER_VARIANTS[i % HEADER_VARIANTS.length]), ...(baseHeaders || {}) };
+    try {
+      // jitter before each attempt
+      await randomDelay(400, 1200);
+      const response = await axios.get(url, {
+        headers,
+        timeout: 20000,
+        maxRedirects: 10,
+        validateStatus: (s) => s < 600,
+      });
+      const html = response.data as string;
+      if (!isBlocked(html, response.status) && html && html.length > 500) {
+        return { data: html, status: response.status };
+      }
+      // exponential backoff if blocked
+      await randomDelay(800 * (i + 1), 1600 * (i + 1));
+    } catch (err) {
+      lastError = err;
+      await randomDelay(800 * (i + 1), 1600 * (i + 1));
+    }
+  }
+  throw new Error(`Failed to fetch after ${attempts} attempts`);
+}
+
+function parseJsonLd($: cheerio.CheerioAPI): Partial<PropertyData> {
+  const results: Array<Partial<PropertyData>> = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const raw = $(el).contents().text();
+    try {
+      const json = JSON.parse(raw);
+      const candidates = Array.isArray(json) ? json : [json];
+      for (const item of candidates) {
+        const type = item['@type'];
+        if (!type) continue;
+        const known = Array.isArray(type) ? type.join(',').toLowerCase() : String(type).toLowerCase();
+        if (
+          known.includes('house') ||
+          known.includes('singlefamilyresidence') ||
+          known.includes('apartment') ||
+          known.includes('product') ||
+          known.includes('place') ||
+          known.includes('realestatelisting')
+        ) {
+          const offers = item.offers || item.aggregateOffer || {};
+          const addressObj = item.address || (item.itemOffered && item.itemOffered.address) || {};
+          const descriptionObj = item.itemOffered || item;
+          const priceVal = offers.price || offers.lowPrice || item.price;
+          const bedrooms = descriptionObj.numberOfRooms || descriptionObj.bedrooms || 0;
+          const bathrooms = descriptionObj.numberOfBathroomsTotal || descriptionObj.bathrooms || 0;
+          const floorSize = (descriptionObj.floorSize && (descriptionObj.floorSize.value || descriptionObj.floorSize)) || descriptionObj.sqft || 0;
+          const propertyType = descriptionObj['@type'] || item.category || 'Property';
+          const address = [addressObj.streetAddress, addressObj.addressLocality, addressObj.addressRegion, addressObj.postalCode]
+            .filter(Boolean)
+            .join(', ');
+          const parsed: Partial<PropertyData> = {
+            price: typeof priceVal === 'string' ? parsePrice(String(priceVal)) : Number(priceVal) || 0,
+            address: address || '',
+            beds: Number(bedrooms) || 0,
+            baths: Number(bathrooms) || 0,
+            sqft: typeof floorSize === 'string' ? parseInt(String(floorSize).replace(/[^0-9]/g, '')) || 0 : Number(floorSize) || 0,
+            propertyType: String(propertyType),
+          } as Partial<PropertyData>;
+          results.push(parsed);
+        }
+      }
+    } catch {
+      // ignore json parse errors
+    }
+  });
+  // Prefer the first reasonable result
+  const best = results.find(r => (r.price && r.price > 0) || (r.address && r.address.length > 0));
+  return best || {};
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json();
@@ -102,14 +222,11 @@ async function scrapeZillow(url: string): Promise<PropertyData> {
   // Add random delay to avoid rate limiting
   await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
 
-  const response = await axios.get(url, {
-    headers,
-    timeout: 15000,
-    maxRedirects: 5,
-    validateStatus: (status) => status < 500, // Accept redirects and client errors
-  });
+  const fetched = await fetchWithRetries(url, headers, 4);
+  const $ = cheerio.load(fetched.data);
   
-  const $ = cheerio.load(response.data);
+  // Try JSON-LD first
+  const fromJsonLd = parseJsonLd($);
   
   // More comprehensive selectors for Zillow
   const priceText = $('[data-testid="price"]').text() || 
@@ -118,10 +235,10 @@ async function scrapeZillow(url: string): Promise<PropertyData> {
                    $('.price').text() ||
                    $('[class*="price"]').text() ||
                    $('span:contains("$")').first().text();
-  const price = parsePrice(priceText);
+  const price = fromJsonLd.price && fromJsonLd.price > 0 ? fromJsonLd.price : parsePrice(priceText);
   
   // Extract address with multiple fallbacks
-  const address = $('[data-testid="address"]').text() || 
+  const address = fromJsonLd.address || $('[data-testid="address"]').text() || 
                  $('.ds-address-container').text() || 
                  $('.address').text() ||
                  $('h1').first().text() || 
@@ -134,10 +251,14 @@ async function scrapeZillow(url: string): Promise<PropertyData> {
                   $('.bed-bath-beyond').text() ||
                   $('[class*="bed"]').text() ||
                   $('[class*="bath"]').text();
-  const { beds, baths, sqft } = parsePropertyDetails(bedsText);
+  const { beds, baths, sqft } = {
+    beds: fromJsonLd.beds ?? parsePropertyDetails(bedsText).beds,
+    baths: fromJsonLd.baths ?? parsePropertyDetails(bedsText).baths,
+    sqft: fromJsonLd.sqft ?? parsePropertyDetails(bedsText).sqft,
+  };
   
   // Extract property type
-  const propertyType = $('[data-testid="property-type"]').text() || 
+  const propertyType = fromJsonLd.propertyType || $('[data-testid="property-type"]').text() || 
                       $('.ds-property-type').text() || 
                       $('.property-type').text() ||
                       $('[class*="property-type"]').text() ||
@@ -173,14 +294,10 @@ async function scrapeZillowAlternative(url: string): Promise<PropertyData> {
   // Longer delay for alternative approach
   await new Promise(resolve => setTimeout(resolve, Math.random() * 3000 + 2000));
 
-  const response = await axios.get(url, {
-    headers,
-    timeout: 20000,
-    maxRedirects: 10,
-    validateStatus: (status) => status < 500,
-  });
+  const fetched = await fetchWithRetries(url, headers, 4);
+  const $ = cheerio.load(fetched.data);
   
-  const $ = cheerio.load(response.data);
+  const fromJsonLd = parseJsonLd($);
   
   // Try different selectors for Zillow
   const priceText = $('span[data-testid="price"]').text() || 
@@ -189,9 +306,9 @@ async function scrapeZillowAlternative(url: string): Promise<PropertyData> {
                    $('.price').text() ||
                    $('span:contains("$")').first().text() ||
                    $('[class*="price"]').first().text();
-  const price = parsePrice(priceText);
+  const price = fromJsonLd.price && fromJsonLd.price > 0 ? fromJsonLd.price : parsePrice(priceText);
   
-  const address = $('h1[data-testid="address"]').text() || 
+  const address = fromJsonLd.address || $('h1[data-testid="address"]').text() || 
                  $('.ds-address-container').text() || 
                  $('h1').first().text() || 
                  $('.address').text() ||
@@ -201,9 +318,13 @@ async function scrapeZillowAlternative(url: string): Promise<PropertyData> {
                   $('.ds-bed-bath-living-area').text() ||
                   $('.bed-bath-beyond').text() ||
                   $('[class*="bed"]').text();
-  const { beds, baths, sqft } = parsePropertyDetails(bedsText);
+  const { beds, baths, sqft } = {
+    beds: fromJsonLd.beds ?? parsePropertyDetails(bedsText).beds,
+    baths: fromJsonLd.baths ?? parsePropertyDetails(bedsText).baths,
+    sqft: fromJsonLd.sqft ?? parsePropertyDetails(bedsText).sqft,
+  };
   
-  const propertyType = $('[data-testid="property-type"]').text() || 
+  const propertyType = fromJsonLd.propertyType || $('[data-testid="property-type"]').text() || 
                       $('.ds-property-type').text() || 
                       $('.property-type').text() ||
                       'Property type not found';
@@ -358,38 +479,90 @@ async function scrapeRedfin(url: string): Promise<PropertyData> {
 
   await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
 
-  const response = await axios.get(url, {
-    headers,
-    timeout: 15000,
-    maxRedirects: 5,
-  });
+  const fetched = await fetchWithRetries(url, headers, 3);
+  const $ = cheerio.load(fetched.data);
+  const pageText = $('body').text().replace(/[\u00a0\s]+/g, ' ').trim();
   
-  const $ = cheerio.load(response.data);
+  const fromJsonLd = parseJsonLd($);
   
   // Extract price with multiple selectors
-  const priceText = $('.home-main-stats .statsValue').first().text() || 
+  let priceText = $('.home-main-stats .statsValue').first().text() || 
                    $('.price').text() ||
                    $('[class*="price"]').text() ||
                    $('span:contains("$")').first().text();
-  const price = parsePrice(priceText);
+  if ((!priceText || parsePrice(priceText) === 0) && pageText) {
+    const estimateMatch = pageText.match(/Redfin Estimate\s*\$([\d,]+)/i);
+    if (estimateMatch) priceText = `$${estimateMatch[1]}`;
+  }
+  const redfinEstimateMatch = pageText.match(/Redfin Estimate\s*\$([\d,]+)/i);
+  const redfinEstimate = redfinEstimateMatch ? parseInt(redfinEstimateMatch[1].replace(/,/g, '')) : (fromJsonLd.price || 0);
+  // Example following line on Redfin: "$1.2M since sold in May 2021"
+  let redfinEstimateChangeText: string | undefined;
+  const changeIdx = pageText.indexOf('Redfin Estimate');
+  if (changeIdx >= 0) {
+    const tail = pageText.slice(changeIdx, changeIdx + 300);
+    const changeMatch = tail.match(/\$[\d,.]+\s*(?:[MK])?\s*since\s+sold\s+in\s+[A-Za-z]+\s+\d{4}/i);
+    if (changeMatch) redfinEstimateChangeText = changeMatch[0].trim();
+  }
+  const price = fromJsonLd.price && fromJsonLd.price > 0 ? fromJsonLd.price : parsePrice(priceText);
   
   // Extract address
-  const address = $('.street-address').text() || 
+  let address = fromJsonLd.address || $('.street-address').text() || 
                  $('.home-main-stats .statsValue').eq(1).text() || 
                  $('.address').text() ||
                  $('h1').first().text() ||
                  'Address not found';
+  if (address === 'Address not found' && pageText) {
+    const addrMatch = pageText.match(/\d+\s+[^,]+,\s*[^,]+,\s*[A-Z]{2}\s*\d{5}/);
+    if (addrMatch) address = addrMatch[0];
+  }
   
   // Extract beds/baths/sqft
-  const bedsText = $('.home-main-stats').text() ||
+  let bedsText = $('.home-main-stats').text() ||
                   $('.bed-bath-beyond').text() ||
                   $('[class*="bed"]').text();
-  const { beds, baths, sqft } = parsePropertyDetails(bedsText);
+  let parsed = parsePropertyDetails(bedsText);
+  let beds = fromJsonLd.beds ?? parsed.beds;
+  let baths = fromJsonLd.baths ?? parsed.baths;
+  let sqft = fromJsonLd.sqft ?? parsed.sqft;
+  if ((beds === 0 && baths === 0 && sqft === 0) && pageText) {
+    const bedsMatch = pageText.match(/(\d+)\s*Beds?/i);
+    const bathsMatch = pageText.match(/(\d+(?:\.\d+)?)\s*Baths?/i);
+    const sqftMatch = pageText.match(/([\d,]+)\s*Sq\s*Ft/i);
+    if (bedsMatch) beds = parseInt(bedsMatch[1]);
+    if (bathsMatch) baths = parseFloat(bathsMatch[1]);
+    if (sqftMatch) sqft = parseInt(sqftMatch[1].replace(/,/g, ''));
+  }
   
   // Extract property type
-  const propertyType = $('.PropertyType').text() || 
+  const propertyType = fromJsonLd.propertyType || $('.PropertyType').text() || 
                       $('.property-type').text() ||
                       'Property type not found';
+
+  // Detect status and last sold data
+  const isOffMarket = /OFF\s*MARKET/i.test(pageText);
+  const soldMatch = pageText.match(/SOLD\s+([A-Z]{3}\s\d{4})\s+FOR\s+\$([\d,]+)/i);
+  const lastSoldDate = soldMatch ? soldMatch[1] : undefined;
+  const lastSoldPrice = soldMatch ? parseInt(soldMatch[2].replace(/,/g, '')) : undefined;
+
+  // Gather basic comps from the nearby cards (very simple heuristic)
+  const comps: Array<{ address?: string; price: number; beds?: number; baths?: number; sqft?: number; url?: string; }> = [];
+  $('[href*="/home/"]').each((_, el) => {
+    const compUrl = $(el).attr('href') || '';
+    const text = $(el).text();
+    const priceMatch = text.match(/\$[\d,]+/);
+    if (priceMatch) {
+      const comp: any = { price: parseInt(priceMatch[0].replace(/[^0-9]/g, '')) };
+      const bedsMatch = text.match(/(\d+)\s*beds?/i);
+      const bathsMatch = text.match(/(\d+(?:\.\d+)?)\s*baths?/i);
+      const sqftMatch = text.match(/([\d,]+)\s*sq\s*ft/i);
+      if (bedsMatch) comp.beds = parseInt(bedsMatch[1]);
+      if (bathsMatch) comp.baths = parseFloat(bathsMatch[1]);
+      if (sqftMatch) comp.sqft = parseInt(sqftMatch[1].replace(/,/g, ''));
+      comp.url = compUrl.startsWith('http') ? compUrl : `https://www.redfin.com${compUrl}`;
+      comps.push(comp);
+    }
+  });
 
   if (price === 0 || address === 'Address not found') {
     throw new Error('Unable to extract property data from Redfin.');
@@ -402,7 +575,13 @@ async function scrapeRedfin(url: string): Promise<PropertyData> {
     baths,
     sqft,
     propertyType: propertyType.trim(),
-    url
+    url,
+    status: isOffMarket ? 'off-market' : 'active',
+    redfinEstimate: redfinEstimate || undefined,
+    redfinEstimateChangeText,
+    lastSoldPrice,
+    lastSoldDate,
+    comps: comps.slice(0, 6),
   };
 }
 
@@ -416,23 +595,20 @@ async function scrapeHomes(url: string): Promise<PropertyData> {
 
   await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
 
-  const response = await axios.get(url, {
-    headers,
-    timeout: 15000,
-    maxRedirects: 5,
-  });
+  const fetched = await fetchWithRetries(url, headers, 3);
+  const $ = cheerio.load(fetched.data);
   
-  const $ = cheerio.load(response.data);
+  const fromJsonLd = parseJsonLd($);
   
   // Extract price
   const priceText = $('.price').text() || 
                    $('[data-testid="price"]').text() ||
                    $('[class*="price"]').text() ||
                    $('span:contains("$")').first().text();
-  const price = parsePrice(priceText);
+  const price = fromJsonLd.price && fromJsonLd.price > 0 ? fromJsonLd.price : parsePrice(priceText);
   
   // Extract address
-  const address = $('.address').text() || 
+  const address = fromJsonLd.address || $('.address').text() || 
                  $('[data-testid="address"]').text() || 
                  $('h1').first().text() ||
                  'Address not found';
@@ -441,10 +617,14 @@ async function scrapeHomes(url: string): Promise<PropertyData> {
   const bedsText = $('.property-details').text() || 
                   $('.beds-baths-sqft').text() ||
                   $('[class*="bed"]').text();
-  const { beds, baths, sqft } = parsePropertyDetails(bedsText);
+  const { beds, baths, sqft } = {
+    beds: fromJsonLd.beds ?? parsePropertyDetails(bedsText).beds,
+    baths: fromJsonLd.baths ?? parsePropertyDetails(bedsText).baths,
+    sqft: fromJsonLd.sqft ?? parsePropertyDetails(bedsText).sqft,
+  };
   
   // Extract property type
-  const propertyType = $('.property-type').text() || 
+  const propertyType = fromJsonLd.propertyType || $('.property-type').text() || 
                       $('[class*="property-type"]').text() ||
                       'Property type not found';
 
