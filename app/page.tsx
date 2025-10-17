@@ -228,7 +228,7 @@ export default function Home() {
           step={step}
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+          className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider "
         />
         <div className="flex items-center gap-1">
           <input
@@ -238,7 +238,7 @@ export default function Home() {
             step={step}
             value={value}
             onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-            className="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500 text-black"
           />
           <span className="text-xs text-gray-500 min-w-[20px]">{suffix}</span>
         </div>
