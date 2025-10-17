@@ -3,4 +3,4 @@
 
 # Run lint and type check before pushing
 pnpm lint
-pnpm typecheck
+pnpm build
