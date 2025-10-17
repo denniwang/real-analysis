@@ -208,7 +208,7 @@ export default function Home() {
         updatedParameters
       );
       setAnalysis(investmentAnalysis);
-    } catch (err) {
+    } catch {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
@@ -245,68 +245,64 @@ export default function Home() {
     step: number;
     suffix: string;
     onChange: (value: number) => void;
-  }) => (
-    <div className="space-y-2">
-      <label className="block text-xs font-medium text-gray-600">{label}</label>
-      <div className="flex items-center gap-3">
-        {(() => {
-          const [localValue, setLocalValue] = useState<number>(value);
-          const [isDragging, setIsDragging] = useState<boolean>(false);
+  }) => {
+    const [localValue, setLocalValue] = useState<number>(value);
+    const [isDragging, setIsDragging] = useState<boolean>(false);
 
-          useEffect(() => {
-            if (!isDragging) setLocalValue(value);
-          }, [value, isDragging]);
+    useEffect(() => {
+      if (!isDragging) setLocalValue(value);
+    }, [isDragging, value]);
 
-          const commit = (v: number) => onChange(v);
+    const commit = (v: number) => onChange(v);
 
-          return (
-            <>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={localValue}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  setLocalValue(v);
-                }}
-                onInput={(e) => {
-                  const v = parseFloat((e.target as HTMLInputElement).value);
-                  setLocalValue(v);
-                }}
-                onMouseDown={() => setIsDragging(true)}
-                onTouchStart={() => setIsDragging(true)}
-                onMouseUp={() => {
-                  setIsDragging(false);
-                  commit(localValue);
-                }}
-                onTouchEnd={() => {
-                  setIsDragging(false);
-                  commit(localValue);
-                }}
-                className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-              />
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={min}
-                  max={max}
-                  step={step}
-                  value={value}
-                  onChange={(e) => commit(parseFloat(e.target.value) || 0)}
-                  className="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500 text-black"
-                />
-                <span className="text-xs text-gray-500 min-w-[20px]">
-                  {suffix}
-                </span>
-              </div>
-            </>
-          );
-        })()}
+    return (
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-gray-600">
+          {label}
+        </label>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={localValue}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              setLocalValue(v);
+            }}
+            onInput={(e) => {
+              const v = parseFloat((e.target as HTMLInputElement).value);
+              setLocalValue(v);
+            }}
+            onMouseDown={() => setIsDragging(true)}
+            onTouchStart={() => setIsDragging(true)}
+            onMouseUp={() => {
+              setIsDragging(false);
+              commit(localValue);
+            }}
+            onTouchEnd={() => {
+              setIsDragging(false);
+              commit(localValue);
+            }}
+            className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+          />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={min}
+              max={max}
+              step={step}
+              value={value}
+              onChange={(e) => commit(parseFloat(e.target.value) || 0)}
+              className="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500 text-black"
+            />
+            <span className="text-xs text-gray-500 min-w-[20px]">{suffix}</span>
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
