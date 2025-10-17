@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import PropertyAnalysis from "./components/PropertyAnalysis";
 import {
   PropertyData,
@@ -12,7 +12,7 @@ import {
 } from "./utils/calculations";
 
 export default function Home() {
-  type Unit = "%" | "$/mo" | "years" | "";
+  type Unit = "%" | "$/mo" | "years" | "$" | "";
   type SliderConfig = {
     key: keyof AnalysisParameters;
     label: string;
@@ -24,6 +24,15 @@ export default function Home() {
   };
 
   const SLIDER_CONFIGS: SliderConfig[] = [
+    {
+      key: "offerPrice",
+      label: "Offer Price",
+      min: 50000,
+      max: 5000000,
+      step: 1000,
+      unit: "$",
+      defaultValue: 0,
+    },
     {
       key: "downPaymentPercent",
       label: "Down Payment",
@@ -58,6 +67,15 @@ export default function Home() {
       max: 10000,
       step: 50,
       unit: "",
+      defaultValue: 0,
+    },
+    {
+      key: "afterRepairValue",
+      label: "After Repair Value (ARV)",
+      min: 50000,
+      max: 6000000,
+      step: 1000,
+      unit: "$",
       defaultValue: 0,
     },
     {
@@ -124,6 +142,8 @@ export default function Home() {
       hoaFees: 0,
       maintenancePercent: 0,
       vacancyRatePercent: 0,
+      offerPrice: 0,
+      afterRepairValue: 0,
     };
     for (const cfg of SLIDER_CONFIGS) {
       initial[cfg.key] = cfg.defaultValue;
@@ -168,11 +188,19 @@ export default function Home() {
         } as PropertyData;
       }
 
-      // Auto-calculate rent if not set
+      // Auto-calculate rent if not set; prefill offer price and ARV defaults
       const monthlyRent =
         parameters.monthlyRent || estimateRentFromPrice(propertyData.price);
 
-      const updatedParameters = { ...parameters, monthlyRent };
+      const updatedParameters = {
+        ...parameters,
+        monthlyRent,
+        offerPrice: parameters.offerPrice || propertyData.price,
+        afterRepairValue:
+          parameters.afterRepairValue ||
+          propertyData.redfinEstimate ||
+          propertyData.price,
+      };
       setParameters(updatedParameters);
 
       const investmentAnalysis = calculateInvestmentAnalysis(
@@ -221,27 +249,61 @@ export default function Home() {
     <div className="space-y-2">
       <label className="block text-xs font-medium text-gray-600">{label}</label>
       <div className="flex items-center gap-3">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider "
-        />
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            min={min}
-            max={max}
-            step={step}
-            value={value}
-            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-            className="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500 text-black"
-          />
-          <span className="text-xs text-gray-500 min-w-[20px]">{suffix}</span>
-        </div>
+        {(() => {
+          const [localValue, setLocalValue] = useState<number>(value);
+          const [isDragging, setIsDragging] = useState<boolean>(false);
+
+          useEffect(() => {
+            if (!isDragging) setLocalValue(value);
+          }, [value, isDragging]);
+
+          const commit = (v: number) => onChange(v);
+
+          return (
+            <>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={localValue}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  setLocalValue(v);
+                }}
+                onInput={(e) => {
+                  const v = parseFloat((e.target as HTMLInputElement).value);
+                  setLocalValue(v);
+                }}
+                onMouseDown={() => setIsDragging(true)}
+                onTouchStart={() => setIsDragging(true)}
+                onMouseUp={() => {
+                  setIsDragging(false);
+                  commit(localValue);
+                }}
+                onTouchEnd={() => {
+                  setIsDragging(false);
+                  commit(localValue);
+                }}
+                className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+              />
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={min}
+                  max={max}
+                  step={step}
+                  value={value}
+                  onChange={(e) => commit(parseFloat(e.target.value) || 0)}
+                  className="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-500 text-black"
+                />
+                <span className="text-xs text-gray-500 min-w-[20px]">
+                  {suffix}
+                </span>
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );

@@ -31,6 +31,8 @@ export interface AnalysisParameters {
   hoaFees: number;
   maintenancePercent: number;
   vacancyRatePercent: number;
+  offerPrice: number;
+  afterRepairValue: number;
 }
 
 export interface InvestmentAnalysis {
@@ -50,6 +52,10 @@ export interface InvestmentAnalysis {
   monthlyOperatingExpenses: number; // excluding mortgage
   annualNOI: number; // NOI based on effective rent and operating expenses
   dscr: number; // Debt Service Coverage Ratio = NOI / Annual Debt Service
+  // Refinance metrics (if ARV present)
+  refiLoanAmount?: number; // e.g., 75% of ARV by default
+  refiCashOut?: number; // proceeds after paying off original loan
+  refiLTV?: number; // LTV used
 }
 
 export interface ScrapeResponse {

@@ -21,6 +21,11 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
     dscr,
   } = analysis;
 
+  const displayPrice =
+    analysis.parameters.offerPrice && analysis.parameters.offerPrice > 0
+      ? analysis.parameters.offerPrice
+      : propertyData.price;
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -216,7 +221,7 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
             </p>
             <p>
               • Cap Rate = NOI ÷ Price = {formatCurrency(annualNOI)} ÷{" "}
-              {formatCurrency(propertyData.price)} = {formatPercentage(capRate)}
+              {formatCurrency(displayPrice)} = {formatPercentage(capRate)}
             </p>
             <p>
               • DSCR = NOI ÷ Annual Debt Service = {formatCurrency(annualNOI)} ÷{" "}
@@ -231,6 +236,69 @@ export default function PropertyAnalysis({ analysis }: PropertyAnalysisProps) {
             </p>
           </div>
         </div>
+
+        {/* Refinance Analysis */}
+        {analysis.refiLoanAmount && (
+          <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
+            <h3 className="font-semibold text-gray-800 mb-2">
+              Cash-Out Refinance
+            </h3>
+            <div className="text-sm text-gray-700 space-y-1">
+              <p>• ARV LTV: {analysis.refiLTV?.toFixed(0)}%</p>
+              <p>
+                • New Loan Amount (post-repair):{" "}
+                {formatCurrency(analysis.refiLoanAmount)}
+              </p>
+              <p>
+                • Cash-Out Proceeds (after payoff):{" "}
+                {formatCurrency(analysis.refiCashOut || 0)}
+              </p>
+            </div>
+            <p className="text-xs text-gray-600 mt-2">
+              Assumes {analysis.refiLTV?.toFixed(0)}% LTV on ARV. Cash-out shown
+              as new loan amount minus original loan balance.
+            </p>
+
+            {/* Formulas */}
+            <div className="mt-3 text-xs text-gray-700 space-y-1">
+              <p className="font-semibold text-gray-800">Formulas</p>
+              <p>
+                • Purchase Price = {formatCurrency(displayPrice)} (uses Offer
+                Price if set)
+              </p>
+              <p>
+                • Down Payment = Purchase Price × Down Payment% ={" "}
+                {formatCurrency(displayPrice)} ×{" "}
+                {analysis.parameters.downPaymentPercent}% ={" "}
+                {formatCurrency(analysis.downPayment)}
+              </p>
+              <p>
+                • Original Loan = Purchase Price − Down Payment ={" "}
+                {formatCurrency(displayPrice)} −{" "}
+                {formatCurrency(analysis.downPayment)} ={" "}
+                {formatCurrency(displayPrice - analysis.downPayment)}
+              </p>
+              <p>
+                • New Loan = ARV × LTV ={" "}
+                {formatCurrency(analysis.parameters.afterRepairValue)} ×{" "}
+                {analysis.refiLTV?.toFixed(0)}% ={" "}
+                {formatCurrency(analysis.refiLoanAmount || 0)}
+              </p>
+              <p>
+                • Cash-Out = max(0, New Loan − Original Loan) = max(0,{" "}
+                {formatCurrency(analysis.refiLoanAmount || 0)} −{" "}
+                {formatCurrency(displayPrice - analysis.downPayment)}) ={" "}
+                {formatCurrency(
+                  Math.max(
+                    0,
+                    (analysis.refiLoanAmount || 0) -
+                      (displayPrice - analysis.downPayment)
+                  )
+                )}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
