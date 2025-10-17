@@ -216,7 +216,7 @@ export default function Home() {
     max: number;
     step: number;
     suffix: string;
-    onChange: (value: any) => void;
+    onChange: (value: number) => void;
   }) => (
     <div className="space-y-2">
       <label className="block text-xs font-medium text-gray-600">{label}</label>
