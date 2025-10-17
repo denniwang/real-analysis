@@ -228,7 +228,7 @@ export default function Home() {
           step={step}
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="flex-1 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+          className="w-40 md:w-52 lg:w-64 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
         />
         <div className="flex items-center gap-1">
           <input
@@ -306,7 +306,7 @@ export default function Home() {
                 Analysis Parameters
               </h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
                 {SLIDER_CONFIGS.map((cfg) => (
                   <div className="space-y-3" key={cfg.key}>
                     <SliderInput
